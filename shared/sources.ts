@@ -241,7 +241,7 @@ export const originSources = {
     color: "blue",
     home: "https://www.bilibili.com",
     // cloudflare pages cannot access
-    disable: true,
+    // disable: true,
     sub: {
       "hot-search": {
         title: "热搜",
@@ -265,6 +265,12 @@ export const originSources = {
     color: "gray",
     desc: "不一定靠谱，多看多思考",
     home: "https://kaopu.news/",
+  },
+  "jin10": {
+    name: "金十数据",
+    column: "finance",
+    color: "blue",
+    home: "https://www.jin10.com",
   },
 } as const satisfies Record<string, OriginSource>
 
