@@ -23,6 +23,8 @@ import { currentSourcesAtom } from "~/atoms"
 
 export function Dnd() {
   const [items, setItems] = useAtom(currentSourcesAtom)
+  useEntireQuery(items)
+
   return (
     <DndWrapper items={items} setItems={setItems}>
       <motion.ol
@@ -52,8 +54,13 @@ export function Dnd() {
               type: "tween",
             }}
             variants={{
-              hidden: { y: 20, opacity: 0 },
+              hidden: {
+                y: 20,
+                opacity: 0,
+                display: "none",
+              },
               visible: {
+                display: "block",
                 y: 0,
                 opacity: 1,
               },

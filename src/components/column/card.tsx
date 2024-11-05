@@ -5,7 +5,6 @@ import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities"
 import { useWindowSize } from "react-use"
 import { forwardRef, useImperativeHandle } from "react"
 import { OverlayScrollbar } from "../common/overlay-scrollbar"
-import { refetchSourcesAtom } from "~/atoms"
 import { safeParseString } from "~/utils"
 
 export interface ItemsProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -20,12 +19,14 @@ export interface ItemsProps extends React.HTMLAttributes<HTMLDivElement> {
 interface NewsCardProps {
   id: SourceID
   handleListeners?: SyntheticListenerMap
-  inView: boolean
 }
 
 export const CardWrapper = forwardRef<HTMLDivElement, ItemsProps>(({ id, isDragged, handleListeners, style, ...props }, dndRef) => {
   const ref = useRef<HTMLDivElement>(null)
-  const inView = useInView(ref)
+
+  const inView = useInView(ref, {
+    once: true,
+  })
 
   useImperativeHandle(dndRef, () => ref.current!)
 
@@ -44,65 +45,62 @@ export const CardWrapper = forwardRef<HTMLDivElement, ItemsProps>(({ id, isDragg
       }}
       {...props}
     >
-      <NewsCard id={id} inView={inView} handleListeners={handleListeners} />
+      {inView && <NewsCard id={id} handleListeners={handleListeners} />}
     </div>
   )
 })
 
-const prevSourceItems: Partial<Record<SourceID, NewsItem[]>> = {}
-function NewsCard({ id, inView, handleListeners }: NewsCardProps) {
-  const [refetchSource, setRefetchSource] = useAtom(refetchSourcesAtom)
-  const { data, isFetching, isPlaceholderData, isError } = useQuery({
-    queryKey: [id, refetchSource[id]],
+function NewsCard({ id, handleListeners }: NewsCardProps) {
+  const { refresh } = useRefetch()
+  const { data, isFetching, isError } = useQuery({
+    queryKey: ["source", id],
     queryFn: async ({ queryKey }) => {
-      const [_id, _refetchTime] = queryKey as [SourceID, number]
-      let url = `/api/s/${_id}`
+      const id = queryKey[1] as SourceID
+      let url = `/s?id=${id}`
       const headers: Record<string, any> = {}
-      if (Date.now() - _refetchTime < 1000) {
-        url = `/api/s/${_id}?latest`
+      if (refetchSources.has(id)) {
+        url = `/s?id=${id}&latest`
         const jwt = safeParseString(localStorage.getItem("jwt"))
         if (jwt) headers.Authorization = `Bearer ${jwt}`
+        refetchSources.delete(id)
+      } else if (cacheSources.has(id)) {
+        // wait animation
+        await delay(200)
+        return cacheSources.get(id)
       }
+
       const response: SourceResponse = await myFetch(url, {
         headers,
       })
 
-      try {
-        if (response.items && sources[_id].type === "hottest" && prevSourceItems[_id]) {
-          response.items.forEach((item, i) => {
-            const o = prevSourceItems[_id]!.findIndex(k => k.id === item.id)
-            item.extra = {
-              ...item?.extra,
-              diff: o === -1 ? undefined : o - i,
-            }
-          })
+      function diff() {
+        try {
+          if (response.items && sources[id].type === "hottest" && cacheSources.has(id)) {
+            response.items.forEach((item, i) => {
+              const o = cacheSources.get(id)!.items.findIndex(k => k.id === item.id)
+              item.extra = {
+                ...item?.extra,
+                diff: o === -1 ? undefined : o - i,
+              }
+            })
+          }
+        } catch (e) {
+          console.error(e)
         }
-      } catch (e) {
-        console.log(e)
       }
 
+      diff()
+
+      cacheSources.set(id, response)
       return response
     },
-    // refetch 时显示原有的数据
-    placeholderData: (prev) => {
-      if (prev?.id === id) {
-        if (prev?.items && sources[id].type === "hottest") prevSourceItems[id] = prev.items
-        return prev
-      }
-    },
+    placeholderData: prev => prev,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
     retry: false,
-    staleTime: 1000 * 60 * 5,
-    enabled: inView,
   })
-
-  const manualRefetch = useCallback(() => {
-    setRefetchSource(prev => ({
-      ...prev,
-      [id]: Date.now(),
-    }))
-  }, [setRefetchSource, id])
-
-  const isFreshFetching = useMemo(() => isFetching && !isPlaceholderData, [isFetching, isPlaceholderData])
 
   const { isFocused, toggleFocus } = useFocusWith(id)
 
@@ -136,7 +134,7 @@ function NewsCard({ id, inView, handleListeners }: NewsCardProps) {
           <button
             type="button"
             className={$("btn i-ph:arrow-counter-clockwise-duotone", isFetching && "animate-spin i-ph:circle-dashed-duotone")}
-            onClick={manualRefetch}
+            onClick={() => refresh(id)}
           />
           <button
             type="button"
@@ -156,15 +154,15 @@ function NewsCard({ id, inView, handleListeners }: NewsCardProps) {
       <OverlayScrollbar
         className={$([
           "h-full p-2 overflow-y-auto rounded-2xl bg-base bg-op-70!",
-          isFreshFetching && `animate-pulse`,
+          isFetching && `animate-pulse`,
           `sprinkle-${sources[id].color}`,
         ])}
         options={{
           overflow: { x: "hidden" },
         }}
-        defer
+        defer={false}
       >
-        <div className={$("transition-opacity-500", isFreshFetching && "op-20")}>
+        <div className={$("transition-opacity-500", isFetching && "op-20")}>
           {!!data?.items?.length && (sources[id].type === "hottest" ? <NewsListHot items={data.items} /> : <NewsListTimeLine items={data.items} />)}
         </div>
       </OverlayScrollbar>

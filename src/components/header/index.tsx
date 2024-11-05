@@ -3,7 +3,7 @@ import { useIsFetching } from "@tanstack/react-query"
 import type { SourceID } from "@shared/types"
 import { NavBar } from "../navbar"
 import { Menu } from "./menu"
-import { currentSourcesAtom, goToTopAtom, refetchSourcesAtom } from "~/atoms"
+import { currentSourcesAtom, goToTopAtom } from "~/atoms"
 
 function GoTop() {
   const { ok, fn: goToTop } = useAtomValue(goToTopAtom)
@@ -19,18 +19,13 @@ function GoTop() {
 
 function Refresh() {
   const currentSources = useAtomValue(currentSourcesAtom)
-  const setRefetchSource = useSetAtom(refetchSourcesAtom)
-  const refreshAll = useCallback(() => {
-    const obj = Object.fromEntries(currentSources.map(id => [id, Date.now()]))
-    setRefetchSource(prev => ({
-      ...prev,
-      ...obj,
-    }))
-  }, [currentSources, setRefetchSource])
+  const { refresh } = useRefetch()
+  const refreshAll = useCallback(() => refresh(...currentSources), [refresh, currentSources])
 
   const isFetching = useIsFetching({
     predicate: (query) => {
-      return currentSources.includes(query.queryKey[0] as SourceID)
+      const [type, id] = query.queryKey as ["source" | "entire", SourceID]
+      return (type === "source" && currentSources.includes(id)) || type === "entire"
     },
   })
 
